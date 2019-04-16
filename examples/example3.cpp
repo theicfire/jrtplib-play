@@ -3,6 +3,8 @@
    for new sources.
 */
 
+#include <unistd.h>
+
 #include "rtpsession.h"
 #include "rtppacket.h"
 #include "rtpudpv4transmitter.h"
@@ -14,6 +16,8 @@
 #include <stdio.h>
 #include <iostream>
 #include <string>
+#include <sys/time.h>
+
 
 using namespace jrtplib;
 
@@ -21,6 +25,12 @@ using namespace jrtplib;
 // This function checks if there was a RTP error. If so, it displays an error
 // message and exists.
 //
+long getMicrotime(){
+	struct timeval currentTime;
+	gettimeofday(&currentTime, NULL);
+	return currentTime.tv_sec * (int)1e6 + currentTime.tv_usec;
+}
+
 
 void checkerror(int rtperr)
 {
@@ -150,15 +160,10 @@ int main(void)
 	std::string ipstr;
 	int status,i,num;
 
-        // First, we'll ask for the necessary information
+	// First, we'll ask for the necessary information
 		
-	std::cout << "Enter local portbase:" << std::endl;
-	std::cin >> portbase;
-	std::cout << std::endl;
-	
-	std::cout << std::endl;
-	std::cout << "Number of seconds you wish to wait:" << std::endl;
-	std::cin >> num;
+	portbase = 9000;
+	num = 10000;
 	
 	// Now, we'll create a RTP session, set the destination
 	// and poll for incoming data.
@@ -176,25 +181,46 @@ int main(void)
 	status = sess.Create(sessparams,&transparams);	
 	checkerror(status);
 	
-	for (i = 1 ; i <= num ; i++)
+	bool packets_received = false;
+	uint32_t count = 0;
+	long now = getMicrotime();
+
+	while(true)
 	{
-		sess.BeginDataAccess();
+		if (packets_received) {
+			printf("Send 100 packets\n");
+			for (int j = 0; j < 10000; j++) {
+				char buff[50];
+				sprintf(buff, "Thing: %d", count);
+				status = sess.SendPacket((void *)buff,50,0,false,10);
+				checkerror(status);
+				count += 1;
+
+				while (getMicrotime() - now < 500) {
+
+				}
+				now = getMicrotime();
+			}
+			break;
+		}
 		
+		sess.BeginDataAccess();
 		// check incoming packets
 		if (sess.GotoFirstSourceWithData())
 		{
+			//printf("I have a source!\n");
 			do
 			{
 				RTPPacket *pack;
 				
 				while ((pack = sess.GetNextPacket()) != NULL)
 				{
-					// You can examine the data here
-					printf("Got packet !\n");
-					
-					// we don't longer need the packet, so
-					// we'll delete it
+					printf("Got a packet\n");
 					sess.DeletePacket(pack);
+					if (!packets_received) {
+						printf("Got the first piece of data! Now waiting...\n");
+						packets_received = true;
+					}
 				}
 			} while (sess.GotoNextSourceWithData());
 		}
@@ -206,7 +232,7 @@ int main(void)
 		checkerror(status);
 #endif // RTP_SUPPORT_THREAD
 		
-		RTPTime::Wait(RTPTime(1,0));
+		//RTPTime::Wait(RTPTime(2, 0));
 	}
 	
 	sess.BYEDestroy(RTPTime(10,0),0,0);

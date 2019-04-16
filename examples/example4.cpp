@@ -11,12 +11,15 @@
 #include "rtpsessionparams.h"
 #include "rtperrors.h"
 #include "rtpsourcedata.h"
+#include "rtpconfig.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
 #include <string>
+#include <sys/time.h>
 
 using namespace jrtplib;
+static int count = 0;
 
 #ifdef RTP_SUPPORT_THREAD
 
@@ -24,6 +27,11 @@ using namespace jrtplib;
 // This function checks if there was a RTP error. If so, it displays an error
 // message and exists.
 //
+long getMicrotime(){
+	struct timeval currentTime;
+	gettimeofday(&currentTime, NULL);
+	return currentTime.tv_sec * (int)1e6 + currentTime.tv_usec;
+}
 
 void checkerror(int rtperr)
 {
@@ -70,16 +78,28 @@ void MyRTPSession::OnPollThreadStep()
 	EndDataAccess();
 }
 
+long now = getMicrotime();
+long max_time_passed = 0;
 void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,const RTPPacket &rtppack)
 {
-	// You can inspect the packet and the source's info here
-	std::cout << "Got packet " << rtppack.GetExtendedSequenceNumber() << " from SSRC " << srcdat.GetSSRC() << std::endl;
+	long time_passed = getMicrotime() - now;
+	if (time_passed < 100000) {
+		if (time_passed > 5000) {
+			max_time_passed = time_passed;
+			std::cout << "max_time_passed: " << max_time_passed << std::endl;
+		}
+	}
+	now = getMicrotime();
+
+	if (count % 1000 == 0) {
+		std::cout << "Got packet " << rtppack.GetPayloadData() <<  " count " << count  << std::endl;
+	}
+	count += 1;
 }
 
 //
 // The main routine
 // 
-
 int main(void)
 {
 #ifdef RTP_SOCKETTYPE_WINSOCK
@@ -88,19 +108,10 @@ int main(void)
 #endif // RTP_SOCKETTYPE_WINSOCK
 	
 	MyRTPSession sess;
-	uint16_t portbase;
+	uint16_t portbase = 9000;
 	std::string ipstr;
 	int status,num;
-
-        // First, we'll ask for the necessary information
-		
-	std::cout << "Enter local portbase:" << std::endl;
-	std::cin >> portbase;
-	std::cout << std::endl;
-	
-	std::cout << std::endl;
-	std::cout << "Number of seconds you wish to wait:" << std::endl;
-	std::cin >> num;
+	num = 10000;
 	
 	// Now, we'll create a RTP session, set the destination
 	// and poll for incoming data.
