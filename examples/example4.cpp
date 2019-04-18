@@ -11,20 +11,39 @@
 #include "rtpsessionparams.h"
 #include "rtperrors.h"
 #include "rtpsourcedata.h"
+#include "rtpconfig.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
 #include <string>
 
 using namespace jrtplib;
+static int count = 0;
 
 #ifdef RTP_SUPPORT_THREAD
+
+unsigned long long getMicroseconds()
+{
+	/* Windows */
+	FILETIME ft;
+	LARGE_INTEGER li;
+
+	/* Get the amount of 100 nano seconds intervals elapsed since January 1, 1601 (UTC) and copy it
+	 *   * to a LARGE_INTEGER structure. */
+	GetSystemTimeAsFileTime(&ft);
+	li.LowPart = ft.dwLowDateTime;
+	li.HighPart = ft.dwHighDateTime;
+
+	unsigned long long ret = li.QuadPart;
+	ret -= 116444736000000000LL; /* Convert from file time to UNIX epoch time. */
+	ret /= 10; /* From 100 nano seconds (10^-7) to 1 microsecond (10^-6) intervals */
+	return ret;
+}
 
 //
 // This function checks if there was a RTP error. If so, it displays an error
 // message and exists.
 //
-
 void checkerror(int rtperr)
 {
 	if (rtperr < 0)
@@ -70,37 +89,40 @@ void MyRTPSession::OnPollThreadStep()
 	EndDataAccess();
 }
 
+long now = getMicroseconds();
+long max_time_passed = 0;
 void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,const RTPPacket &rtppack)
 {
-	// You can inspect the packet and the source's info here
-	std::cout << "Got packet " << rtppack.GetExtendedSequenceNumber() << " from SSRC " << srcdat.GetSSRC() << std::endl;
+	long time_passed = getMicroseconds() - now;
+	if (time_passed < 100000) {
+		if (time_passed > 5000) {
+			max_time_passed = time_passed;
+			std::cout << "max_time_passed: " << max_time_passed << std::endl;
+		}
+	}
+	now = getMicroseconds();
+
+	if (count % 1000 == 0) {
+		std::cout << "Got packet " << rtppack.GetPayloadData() <<  " count " << count  << std::endl;
+	}
+	count += 1;
 }
 
 //
 // The main routine
 // 
-
 int main(void)
 {
+	printf("most current ex4\n");
 #ifdef RTP_SOCKETTYPE_WINSOCK
 	WSADATA dat;
 	WSAStartup(MAKEWORD(2,2),&dat);
 #endif // RTP_SOCKETTYPE_WINSOCK
 	
 	MyRTPSession sess;
-	uint16_t portbase;
+	uint16_t portbase = 9000;
 	std::string ipstr;
-	int status,num;
-
-        // First, we'll ask for the necessary information
-		
-	std::cout << "Enter local portbase:" << std::endl;
-	std::cin >> portbase;
-	std::cout << std::endl;
-	
-	std::cout << std::endl;
-	std::cout << "Number of seconds you wish to wait:" << std::endl;
-	std::cin >> num;
+	int status;
 	
 	// Now, we'll create a RTP session, set the destination
 	// and poll for incoming data.
@@ -116,9 +138,25 @@ int main(void)
 	transparams.SetPortbase(portbase);
 	status = sess.Create(sessparams,&transparams);	
 	checkerror(status);
+
+	RTPIPv4Address addr(ntohl(inet_addr("127.0.0.1")),2000);
+	status = sess.AddDestination(addr);
+	checkerror(status);
+
+	printf("Sending hello to the sender\n");
+	char buff[50] = "Hello";
+	// Have to send multiple packets so that the source isn't ignored for some time. Weird SRTP!
+	status = sess.SendPacket((void *)buff,50,0,false,10);
+	checkerror(status);
+	status = sess.SendPacket((void *)buff,50,0,false,10);
+	checkerror(status);
+	status = sess.SendPacket((void *)buff,50,0,false,10);
+	checkerror(status);
+	status = sess.SendPacket((void *)buff,50,0,false,10);
+	checkerror(status);
 	
 	// Wait a number of seconds
-	RTPTime::Wait(RTPTime(num,0));
+	RTPTime::Wait(RTPTime(10000,0));
 	
 	sess.BYEDestroy(RTPTime(10,0),0,0);
 

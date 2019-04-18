@@ -4,6 +4,7 @@
 */
 
 #include "rtpsession.h"
+#include "rtppacket.h"
 #include "rtpudpv4transmitter.h"
 #include "rtpipv4address.h"
 #include "rtpsessionparams.h"
@@ -13,14 +14,33 @@
 #include <stdio.h>
 #include <iostream>
 #include <string>
+#include <rtpsourcedata.h>
 
 using namespace jrtplib;
+using namespace std;
+
+unsigned long long getMicroseconds()
+{
+	/* Windows */
+	FILETIME ft;
+	LARGE_INTEGER li;
+
+	/* Get the amount of 100 nano seconds intervals elapsed since January 1, 1601 (UTC) and copy it
+	 *   * to a LARGE_INTEGER structure. */
+	GetSystemTimeAsFileTime(&ft);
+	li.LowPart = ft.dwLowDateTime;
+	li.HighPart = ft.dwHighDateTime;
+
+	unsigned long long ret = li.QuadPart;
+	ret -= 116444736000000000LL; /* Convert from file time to UNIX epoch time. */
+	ret /= 10; /* From 100 nano seconds (10^-7) to 1 microsecond (10^-6) intervals */
+	return ret;
+}
 
 //
 // This function checks if there was a RTP error. If so, it displays an error
 // message and exists.
 //
-
 void checkerror(int rtperr)
 {
 	if (rtperr < 0)
@@ -51,13 +71,9 @@ int main(void)
 
 	// First, we'll ask for the necessary information
 		
-	std::cout << "Enter local portbase:" << std::endl;
-	std::cin >> portbase;
-	std::cout << std::endl;
+	portbase = 2000;
 	
-	std::cout << "Enter the destination IP address" << std::endl;
-	std::cin >> ipstr;
-	destip = inet_addr(ipstr.c_str());
+	destip = inet_addr("127.0.0.1");
 	if (destip == INADDR_NONE)
 	{
 		std::cerr << "Bad IP address specified" << std::endl;
@@ -69,12 +85,7 @@ int main(void)
 	// ntohl
 	destip = ntohl(destip);
 	
-	std::cout << "Enter the destination port" << std::endl;
-	std::cin >> destport;
-	
-	std::cout << std::endl;
-	std::cout << "Number of packets you wish to be sent:" << std::endl;
-	std::cin >> num;
+	destport = 9000;
 	
 	// Now, we'll create a RTP session, set the destination, send some
 	// packets and poll for incoming data.
@@ -92,50 +103,54 @@ int main(void)
 	transparams.SetPortbase(portbase);
 	status = sess.Create(sessparams,&transparams);	
 	checkerror(status);
-	
-	RTPIPv4Address addr(destip,destport);
-	
-	status = sess.AddDestination(addr);
-	checkerror(status);
-	
-	for (i = 1 ; i <= num ; i++)
-	{
-		printf("\nSending packet %d/%d\n",i,num);
-		
-		// send the packet
-		status = sess.SendPacket((void *)"1234567890",10,0,false,10);
-		checkerror(status);
-		
+
+	bool wait_for_first_packet = true;
+	while (wait_for_first_packet) {
 		sess.BeginDataAccess();
-		
-		// check incoming packets
-		if (sess.GotoFirstSourceWithData())
+		if (sess.GotoFirstSource())
 		{
 			do
 			{
-				RTPPacket *pack;
-				
-				while ((pack = sess.GetNextPacket()) != NULL)
-				{
-					// You can examine the data here
-					printf("Got packet !\n");
-					
-					// we don't longer need the packet, so
-					// we'll delete it
-					sess.DeletePacket(pack);
-				}
-			} while (sess.GotoNextSourceWithData());
-		}
-		
-		sess.EndDataAccess();
+				RTPPacket* packet;
 
-#ifndef RTP_SUPPORT_THREAD
-		status = sess.Poll();
-		checkerror(status);
-#endif // RTP_SUPPORT_THREAD
-		
-		RTPTime::Wait(RTPTime(1,0));
+				if ((packet = sess.GetNextPacket()) != 0)
+				{
+					const RTPSourceData *source =  sess.GetCurrentSourceInfo();
+					const RTPAddress* addr = source->GetRTPDataAddress();
+					status = sess.AddDestination(*addr);
+					checkerror(status);
+					std::cout << "Added the destination!" << std::endl;
+					sess.DeletePacket(packet);
+					wait_for_first_packet = false;
+					break;
+				}
+			} while (sess.GotoNextSource());
+		}
+		sess.EndDataAccess();
 	}
+
+	unsigned long long start = getMicroseconds();
+	// long max_time_passed = 0;
+	printf("cool Send 100 packets\n");
+	for (int j = 0; j < 1000000; j++) {
+		char buff[50];
+		// long time_passed = getMicrotime() - now;
+		// if (time_passed > max_time_passed) {
+		// 	printf("max_time_passed at %d is now %lu\n", count, time_passed);
+		// 	max_time_passed = time_passed;
+		// }
+		sprintf(buff, "Thing: %d", j);
+		status = sess.SendPacket((void *)buff,50,0,false,10);
+		checkerror(status);
+		long diff = (getMicroseconds() - start);
+
+		while ((getMicroseconds() - start) < j * 50) {
+			//printf("w");
+			//usleep(1000);
+		}
+	}
+		
+
 	
 	sess.BYEDestroy(RTPTime(10,0),0,0);
 
@@ -144,4 +159,5 @@ int main(void)
 #endif // RTP_SOCKETTYPE_WINSOCK
 	return 0;
 }
+
 
