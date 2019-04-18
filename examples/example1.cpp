@@ -114,8 +114,9 @@ int main(void)
 		checkerror(status);
 		count += 1;
 
-		while (getMicrotime() - start < 50 * j) {
-			usleep(1000);
+		// Send at 7000 packets/second
+		while (getMicrotime() - start < 142 * j) {
+			// usleep(1000);
 		}
 	}
 		
