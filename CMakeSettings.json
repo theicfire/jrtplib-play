@@ -3,7 +3,7 @@
     {
       "name": "x64-Debug",
       "generator": "Ninja",
-      "configurationType": "Debug",
+      "configurationType": "Release",
       "buildRoot": "${env.USERPROFILE}\\CMakeBuilds\\${workspaceHash}\\build\\${name}",
       "installRoot": "${env.USERPROFILE}\\CMakeBuilds\\${workspaceHash}\\install\\${name}",
       "cmakeCommandArgs": "",
@@ -14,14 +14,31 @@
         {
           "name": "JThread_DIR",
           "value": "c:/Users/Administrator/code/JThread/build/cmake",
-          "type": "PATH"
+          "type": "STRING"
         },
         {
           "name": "JTHREAD_ENABLED",
           "value": "True",
-          "type": "BOOL"
+          "type": "STRING"
+        },
+        {
+          "name": "ADDITIONAL_GENERAL_LIBRARIES",
+          "value": "C:\\Users\\Administrator\\code\\fecpp\\x64\\Release\\fecpp.lib",
+          "type": "STRING"
         }
       ]
+    },
+    {
+      "name": "x64-Release",
+      "generator": "Ninja",
+      "configurationType": "RelWithDebInfo",
+      "buildRoot": "${env.USERPROFILE}\\CMakeBuilds\\${workspaceHash}\\build\\${name}",
+      "installRoot": "${env.USERPROFILE}\\CMakeBuilds\\${workspaceHash}\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "-v",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "variables": []
     }
   ]
 }

@@ -57,6 +57,8 @@ set (HEADERS
 	rtpselect.h
 	rtptcpaddress.h
 	rtptcptransmitter.h
+	fecpp.h
+	utils.h
 	)
 
 set(SOURCES

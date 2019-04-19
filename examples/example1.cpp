@@ -15,9 +15,93 @@
 #include <iostream>
 #include <string>
 #include <rtpsourcedata.h>
+#include <fecpp.h>
+#include "utils.h"
 
 using namespace jrtplib;
 using namespace std;
+using fecpp::byte;
+
+Timer t;
+//
+// This function checks if there was a RTP error. If so, it displays an error
+// message and exists.
+//
+void checkerror(int rtperr)
+{
+	if (rtperr < 0)
+	{
+		std::cout << "ERROR: " << RTPGetErrorString(rtperr) << std::endl;
+		exit(-1);
+	}
+}
+
+
+struct PacketPayload {
+	uint32_t packet_no;
+	uint32_t fec_block_no;
+	char data[1300];
+};
+
+class output_checker
+   {
+   public:
+      void operator()(size_t block, size_t /*max_blocks*/,
+                      const byte buf[], size_t size)
+         {
+         for(size_t i = 0; i != size; ++i)
+            {
+            byte expected = block*size + i;
+            if(buf[i] != expected)
+               printf("block=%d i=%d got=%02X expected=%02X\n",
+                      (int)block, (int)i, buf[i], expected);
+
+            }
+         }
+   };
+
+class save_to_map
+   {
+   public:
+	   save_to_map(RTPSession& yay): sess(yay) { }
+
+      void operator()(size_t block_no, size_t,
+                      const byte share[], size_t len)
+         {
+		  int status;
+		  PacketPayload payload;
+		  payload.fec_block_no = block_no;
+		  memcpy(payload.data, share, len); // TODO may be slow...
+		  payload.packet_no = 1;
+		  // TODO this void* &payload is a bit sketch.. is the array memory correct?
+		  printf("Sending packet that is %zu long\n", sizeof(PacketPayload));
+		  status = sess.SendPacket((void*)payload.data, sizeof(PacketPayload), 0, false, 10);
+		  checkerror(status);
+         }
+   private:
+	  RTPSession& sess;
+   };
+
+
+void send_sample(size_t k, size_t n, RTPSession& sess)
+   {
+
+   fecpp::fec_code fec(k, n);
+   std::vector<byte> input(k * 1300);
+   for (size_t i = 0; i != input.size(); ++i) {
+	   input[i] = i;
+   }
+   save_to_map saver(sess);
+
+   fec.encode(&input[0], input.size(), std::tr1::ref(saver));
+
+   //while(shares.size() > k)
+   //   shares.erase(shares.begin());
+
+   //output_checker check_output;
+   //fec.decode(shares, share_len, check_output);
+   }
+
 
 unsigned long long getMicroseconds()
 {
@@ -38,19 +122,6 @@ unsigned long long getMicroseconds()
 }
 
 //
-// This function checks if there was a RTP error. If so, it displays an error
-// message and exists.
-//
-void checkerror(int rtperr)
-{
-	if (rtperr < 0)
-	{
-		std::cout << "ERROR: " << RTPGetErrorString(rtperr) << std::endl;
-		exit(-1);
-	}
-}
-
-//
 // The main routine
 //
 
@@ -62,8 +133,7 @@ int main(void)
 #endif // RTP_SOCKETTYPE_WINSOCK
 	
 	RTPSession sess;
-	uint16_t portbase,destport;
-	uint32_t destip;
+	uint16_t portbase;
 	std::string ipstr;
 	int status,i,num;
 
@@ -71,21 +141,7 @@ int main(void)
 
 	// First, we'll ask for the necessary information
 		
-	portbase = 2000;
-	
-	destip = inet_addr("127.0.0.1");
-	if (destip == INADDR_NONE)
-	{
-		std::cerr << "Bad IP address specified" << std::endl;
-		return -1;
-	}
-	
-	// The inet_addr function returns a value in network byte order, but
-	// we need the IP address in host byte order, so we use a call to
-	// ntohl
-	destip = ntohl(destip);
-	
-	destport = 9000;
+	portbase = 9000;
 	
 	// Now, we'll create a RTP session, set the destination, send some
 	// packets and poll for incoming data.
@@ -129,22 +185,22 @@ int main(void)
 		sess.EndDataAccess();
 	}
 
+	printf("Now sending\n");
+	send_sample(200, 255, sess);
 	unsigned long long start = getMicroseconds();
+
+	RTPTime::Wait(RTPTime(100, 0));
 	// long max_time_passed = 0;
 	printf("cool Send 100 packets\n");
 	for (int j = 0; j < 1000000; j++) {
-		char buff[50];
-		// long time_passed = getMicrotime() - now;
-		// if (time_passed > max_time_passed) {
-		// 	printf("max_time_passed at %d is now %lu\n", count, time_passed);
-		// 	max_time_passed = time_passed;
-		// }
-		sprintf(buff, "Thing: %d", j);
-		status = sess.SendPacket((void *)buff,50,0,false,10);
+		PacketPayload payload;
+		payload.packet_no = j;
+		sprintf(payload.data, "Thing: %d", j);
+		status = sess.SendPacket((void *)payload.data,sizeof(PacketPayload),0,false,10);
 		checkerror(status);
 		long diff = (getMicroseconds() - start);
 
-		while ((getMicroseconds() - start) < j * 50) {
+		while ((getMicroseconds() - start) < j * 142) {
 			//printf("w");
 			//usleep(1000);
 		}
