@@ -21,23 +21,10 @@ using namespace jrtplib;
 static int count = 0;
 
 #ifdef RTP_SUPPORT_THREAD
-
-unsigned long long getMicroseconds()
-{
-	/* Windows */
-	FILETIME ft;
-	LARGE_INTEGER li;
-
-	/* Get the amount of 100 nano seconds intervals elapsed since January 1, 1601 (UTC) and copy it
-	 *   * to a LARGE_INTEGER structure. */
-	GetSystemTimeAsFileTime(&ft);
-	li.LowPart = ft.dwLowDateTime;
-	li.HighPart = ft.dwHighDateTime;
-
-	unsigned long long ret = li.QuadPart;
-	ret -= 116444736000000000LL; /* Convert from file time to UNIX epoch time. */
-	ret /= 10; /* From 100 nano seconds (10^-7) to 1 microsecond (10^-6) intervals */
-	return ret;
+long getMicroseconds(){
+	struct timeval currentTime;
+	gettimeofday(&currentTime, NULL);
+	return currentTime.tv_sec * (int)1e6 + currentTime.tv_usec;
 }
 
 //
@@ -71,6 +58,7 @@ void MyRTPSession::OnPollThreadStep()
 	// check incoming packets
 	if (GotoFirstSourceWithData())
 	{
+		printf("S");
 		do
 		{
 			RTPPacket *pack;
@@ -93,18 +81,18 @@ long now = getMicroseconds();
 long max_time_passed = 0;
 void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,const RTPPacket &rtppack)
 {
-	long time_passed = getMicroseconds() - now;
-	if (time_passed < 100000) {
-		if (time_passed > 5000) {
+
+	if (count % 1000 == 0) {
+		long time_passed = getMicroseconds() - now;
+		if (time_passed > 1000 * 300) {
 			max_time_passed = time_passed;
 			std::cout << "max_time_passed: " << max_time_passed << std::endl;
 		}
+		now = getMicroseconds();
+		std::cout << "u";
 	}
-	now = getMicroseconds();
-
-	if (count % 1000 == 0) {
-		std::cout << "Got packet " << rtppack.GetPayloadData() <<  " count " << count  << std::endl;
-	}
+	//std::cout << "Got packet " << rtppack.GetPayloadData() <<  " count " << count  << std::endl;
+	std::cout << "p\n";
 	count += 1;
 }
 
@@ -139,7 +127,7 @@ int main(void)
 	status = sess.Create(sessparams,&transparams);	
 	checkerror(status);
 
-	RTPIPv4Address addr(ntohl(inet_addr("127.0.0.1")),2000);
+	RTPIPv4Address addr(ntohl(inet_addr("54.241.177.60")),9000);
 	status = sess.AddDestination(addr);
 	checkerror(status);
 

@@ -19,23 +19,6 @@
 using namespace jrtplib;
 using namespace std;
 
-unsigned long long getMicroseconds()
-{
-	/* Windows */
-	FILETIME ft;
-	LARGE_INTEGER li;
-
-	/* Get the amount of 100 nano seconds intervals elapsed since January 1, 1601 (UTC) and copy it
-	 *   * to a LARGE_INTEGER structure. */
-	GetSystemTimeAsFileTime(&ft);
-	li.LowPart = ft.dwLowDateTime;
-	li.HighPart = ft.dwHighDateTime;
-
-	unsigned long long ret = li.QuadPart;
-	ret -= 116444736000000000LL; /* Convert from file time to UNIX epoch time. */
-	ret /= 10; /* From 100 nano seconds (10^-7) to 1 microsecond (10^-6) intervals */
-	return ret;
-}
 
 //
 // This function checks if there was a RTP error. If so, it displays an error
@@ -129,25 +112,13 @@ int main(void)
 		sess.EndDataAccess();
 	}
 
-	unsigned long long start = getMicroseconds();
 	// long max_time_passed = 0;
 	printf("cool Send 100 packets\n");
 	for (int j = 0; j < 1000000; j++) {
 		char buff[50];
-		// long time_passed = getMicrotime() - now;
-		// if (time_passed > max_time_passed) {
-		// 	printf("max_time_passed at %d is now %lu\n", count, time_passed);
-		// 	max_time_passed = time_passed;
-		// }
 		sprintf(buff, "Thing: %d", j);
 		status = sess.SendPacket((void *)buff,50,0,false,10);
 		checkerror(status);
-		long diff = (getMicroseconds() - start);
-
-		while ((getMicroseconds() - start) < j * 50) {
-			//printf("w");
-			//usleep(1000);
-		}
 	}
 		
 
