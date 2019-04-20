@@ -30,6 +30,13 @@ long getMicroseconds(){
 
 
 using fecpp::byte;
+std::map<size_t, const byte*> mymap;
+
+struct PacketPayload {
+	uint32_t packet_no;
+	uint32_t fec_block_no;
+	char data[1300];
+};
 
 class output_checker
    {
@@ -40,9 +47,10 @@ class output_checker
          for(size_t i = 0; i != size; ++i)
             {
             byte expected = block*size + i;
-            if(buf[i] != expected)
+            if(buf[i] != expected) {
                printf("block=%d i=%d got=%02X expected=%02X\n",
                       (int)block, (int)i, buf[i], expected);
+	    }
 
             }
          }
@@ -125,7 +133,6 @@ void MyRTPSession::OnPollThreadStep()
 	// check incoming packets
 	if (GotoFirstSourceWithData())
 	{
-		printf("S");
 		do
 		{
 			RTPPacket *pack;
@@ -148,19 +155,14 @@ long now = getMicroseconds();
 long max_time_passed = 0;
 void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,const RTPPacket &rtppack)
 {
+   int share_len = 1300;
+   PacketPayload* payload = (PacketPayload*) rtppack.GetPayloadData();
 
-	if (count % 1000 == 0) {
-		long time_passed = getMicroseconds() - now;
-		if (time_passed > 1000 * 300) {
-			max_time_passed = time_passed;
-			std::cout << "max_time_passed: " << max_time_passed << std::endl;
-		}
-		now = getMicroseconds();
-		std::cout << "u";
-	}
-	//std::cout << "Got packet " << rtppack.GetPayloadData() <<  " count " << count  << std::endl;
-	std::cout << "p\n";
-	count += 1;
+   byte* share_copy = new byte[share_len]; // TOOD memory leak
+   memcpy(share_copy, payload->data, share_len);
+
+   mymap[payload->fec_block_no] = share_copy;
+   printf("Done adding the packet to the map. Block #%d, size is %d\n", payload->fec_block_no, mymap.size());
 }
 
 //
@@ -168,7 +170,7 @@ void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,const RTPPacket 
 // 
 int main(void)
 {
-	benchmark_fec(200, 255);
+	//benchmark_fec(200, 255);
 	printf("most current ex4\n");
 #ifdef RTP_SOCKETTYPE_WINSOCK
 	WSADATA dat;
@@ -211,7 +213,16 @@ int main(void)
 	status = sess.SendPacket((void *)buff,50,0,false,10);
 	checkerror(status);
 	
-	// Wait a number of seconds
+	while (true) {
+	   if (mymap.size() >= 200) {
+	      printf("received everything\n");
+	      break;
+	   }
+	}
+	output_checker check_output;
+	fecpp::fec_code fec(200, 255);
+	fec.decode(mymap, 1300, check_output);
+	//Wait a number of seconds
 	RTPTime::Wait(RTPTime(10000,0));
 	
 	sess.BYEDestroy(RTPTime(10,0),0,0);
