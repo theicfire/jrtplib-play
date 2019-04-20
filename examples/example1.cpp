@@ -84,23 +84,13 @@ class save_to_map
    };
 
 
-void send_sample(size_t k, size_t n, RTPSession& sess)
+void send_sample(std::vector<uint8_t>& input, size_t k, size_t n, RTPSession& sess)
    {
 
    fecpp::fec_code fec(k, n);
-   std::vector<byte> input(k * 1300);
-   for (size_t i = 0; i != input.size(); ++i) {
-	   input[i] = i;
-   }
    save_to_map saver(sess);
 
    fec.encode(&input[0], input.size(), std::tr1::ref(saver));
-
-   //while(shares.size() > k)
-   //   shares.erase(shares.begin());
-
-   //output_checker check_output;
-   //fec.decode(shares, share_len, check_output);
    }
 
 
@@ -187,7 +177,13 @@ int main(void)
 	}
 
 	printf("Now sending\n");
-	send_sample(200, 255, sess);
+	size_t k = 200;
+	size_t n = 255;
+   std::vector<byte> input(k * 1300);
+   for (size_t i = 0; i != input.size(); ++i) {
+	   input[i] = i;
+   }
+	send_sample(input, k, n, sess);
 	unsigned long long start = getMicroseconds();
 
 	RTPTime::Wait(RTPTime(100, 0));
