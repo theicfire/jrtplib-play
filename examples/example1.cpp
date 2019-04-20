@@ -74,8 +74,9 @@ class save_to_map
 		  memcpy(payload.data, share, len); // TODO may be slow...
 		  payload.packet_no = 1;
 		  // TODO this void* &payload is a bit sketch.. is the array memory correct?
-		  printf("Sending packet that is %zu long\n", sizeof(PacketPayload));
-		  status = sess.SendPacket((void*)payload.data, sizeof(PacketPayload), 0, false, 10);
+		  //printf("Sending packet that is %zu long\n", sizeof(PacketPayload));
+		  printf("sending fec block %d\n", payload.fec_block_no);
+		  status = sess.SendPacket((void*)&payload, sizeof(PacketPayload), 0, false, 10);
 		  checkerror(status);
          }
    private:
