@@ -1,38 +1,20 @@
 #include <iostream>
 #include <map>
-#include "rtppacket.h"
 #include "rtpconfig.h"
+#include "utils.h"
+#include "jitterbuffer.h"
 
-using namespace jrtplib;
 using namespace std;
-
-struct PacketPayload {
-	uint32_t frame_no;
-	uint16_t fec_block_no;
-	uint16_t fec_k;
-	char data[1300];
-};
-
-class MemDeleter {
-	public:
-		virtual void DeletePacket(RTPPacket* p) = 0;
-};
 
 class SingleFrame {
 public:
-	SingleFrame(MemDeleter* deleter) : deleter(deleter) {
+	SingleFrame() {
 		fec_k = 10000;
 	}
-	~SingleFrame() {
-		for (auto& pair : m) {
-			deleter->DeletePacket(pair.second);
-		}
-	}
 
-	void add_packet(uint16_t block_no, RTPPacket& packet) {
-		m[block_no] = &packet;
-		PacketPayload* payload = (PacketPayload*)packet.GetPayloadData();
-		fec_k = payload->fec_k;
+	void add_packet(FecPacket& packet) {
+		m[packet.get_block_no()] = &packet;
+		fec_k = packet.get_fec_k();
 	}
 
 	bool frame_ready() {
@@ -42,47 +24,39 @@ public:
 	std::map<uint16_t, char*> getFrameMap() {
 		std::map<uint16_t, char*> ret;
 		for (auto& pair : m) {
-			const RTPPacket* pack = pair.second;
-			PacketPayload* payload = (PacketPayload*)pack->GetPayloadData();
-			ret[payload->fec_block_no] = payload->data;
+			FecPacket* pack = pair.second;
+			std::cout << "first is " << pair.first << std::endl;
+			ret[pair.first] = pack->get_block();
 		}
 		return ret;
 	}
 
 private:
-	MemDeleter* deleter;
-	std::map<uint16_t, RTPPacket*> m;
+	std::map<uint16_t, FecPacket*> m;
 	uint16_t fec_k;
 };
 
-class JitterBuffer {
-public:
-	JitterBuffer(MemDeleter* deleter) :
-		deleter(deleter) { }
+JitterBuffer::JitterBuffer() { }
 
-	void clear_frame(uint16_t frame_no) {
-		m.erase(frame_no);
+void JitterBuffer::clear_frame(uint16_t frame_no) {
+	m.erase(frame_no);
+}
+
+void JitterBuffer::add_packet(uint16_t frame_no, FecPacket& packet) {
+	if (m.count(frame_no) == 0) {
+		m[frame_no] = new SingleFrame();
 	}
+	m[frame_no]->add_packet(packet);
+}
 
-	void add_packet(uint16_t frame_no, uint16_t block_no, RTPPacket& packet) {
-		if (m.count(frame_no) == 0) {
-			m[frame_no] = new SingleFrame(deleter);
-		}
-		m[frame_no]->add_packet(block_no, packet);
+bool JitterBuffer::frame_ready(uint16_t frame_no) {
+	return m.count(frame_no) > 0 ? m[frame_no]->frame_ready() : false;
+}
+
+std::map<uint16_t, char*> JitterBuffer::getFrameMap(uint16_t frame_no) {
+	if (!m[frame_no]->frame_ready()) {
+		throw "Frame not ready";
 	}
+	return m[frame_no]->getFrameMap();
+}
 
-	bool frame_ready(uint16_t frame_no) {
-		return m.count(frame_no) > 0 ? m[frame_no]->frame_ready() : false;
-	}
-
-	std::map<uint16_t, char*> getFrameMap(uint16_t frame_no) {
-		if (!m[frame_no]->frame_ready()) {
-			throw "Frame not ready";
-		}
-		return m[frame_no]->getFrameMap();
-	}
-
-private:
-	MemDeleter* deleter;
-	std::map<uint16_t, SingleFrame*> m;
-};

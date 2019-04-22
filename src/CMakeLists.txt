@@ -58,6 +58,8 @@ set (HEADERS
 	rtptcpaddress.h
 	rtptcptransmitter.h
 	fecpp.h
+	utils.h
+	jitterbuffer.h
 	)
 
 set(SOURCES
