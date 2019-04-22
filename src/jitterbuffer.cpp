@@ -5,6 +5,8 @@
 #include "jitterbuffer.h"
 
 using namespace std;
+using namespace jrtplib;
+using fecpp::byte;
 
 class SingleFrame {
 public:
@@ -12,37 +14,57 @@ public:
 		fec_k = 10000;
 	}
 
-	void add_packet(FecPacket& packet) {
-		m[packet.get_block_no()] = &packet;
-		fec_k = packet.get_fec_k();
+	~SingleFrame() {
+	}
+
+	void clear(Deleter& d) {
+		for (auto& pair: m) {
+			d.deletePacket(pair.second);
+		}
+	}
+
+	void add_packet(RTPPacket& packet) {
+		PacketPayload* payload = (PacketPayload*) packet.GetPayloadData();
+		//cout << "p" << payload->fec_block_no << "=" << &packet << endl;
+		m[payload->fec_block_no] = &packet;
+		fec_k = payload->fec_k;
 	}
 
 	bool frame_ready() {
 		return m.size() >= fec_k;
 	}
 
-	std::map<uint16_t, char*> getFrameMap() {
-		std::map<uint16_t, char*> ret;
+	uint16_t get_fec_k() {
+		return fec_k;
+	}
+
+	std::map<size_t, const byte*> getFrameMap() {
+		std::map<size_t, const byte*> ret;
 		for (auto& pair : m) {
-			FecPacket* pack = pair.second;
-			std::cout << "first is " << pair.first << std::endl;
-			ret[pair.first] = pack->get_block();
+			RTPPacket* pack = pair.second;
+			PacketPayload* payload = (PacketPayload*) pack->GetPayloadData();
+			//std::cout << "first is " << pair.first << std::endl;
+			ret[pair.first] = (byte*) payload->data;
 		}
 		return ret;
 	}
 
 private:
-	std::map<uint16_t, FecPacket*> m;
+	std::map<uint16_t, RTPPacket*> m;
 	uint16_t fec_k;
 };
 
 JitterBuffer::JitterBuffer() { }
 
-void JitterBuffer::clear_frame(uint16_t frame_no) {
-	m.erase(frame_no);
+void JitterBuffer::clear_frame(Deleter& d, uint16_t frame_no) {
+	if (m.count(frame_no) > 0) {
+		m[frame_no]->clear(d);
+		delete m[frame_no];
+		m.erase(frame_no);
+	}
 }
 
-void JitterBuffer::add_packet(uint16_t frame_no, FecPacket& packet) {
+void JitterBuffer::add_packet(uint16_t frame_no, RTPPacket& packet) {
 	if (m.count(frame_no) == 0) {
 		m[frame_no] = new SingleFrame();
 	}
@@ -53,7 +75,15 @@ bool JitterBuffer::frame_ready(uint16_t frame_no) {
 	return m.count(frame_no) > 0 ? m[frame_no]->frame_ready() : false;
 }
 
-std::map<uint16_t, char*> JitterBuffer::getFrameMap(uint16_t frame_no) {
+uint16_t JitterBuffer::get_fec_k(uint16_t frame_no) {
+	if (!m[frame_no]->frame_ready()) {
+		throw "Frame not ready";
+	}
+	return m[frame_no]->get_fec_k();
+
+}
+
+std::map<size_t, const byte*> JitterBuffer::getFrameMap(uint16_t frame_no) {
 	if (!m[frame_no]->frame_ready()) {
 		throw "Frame not ready";
 	}

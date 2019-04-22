@@ -21,6 +21,7 @@
 #include "jitterbuffer.h"
 
 using namespace jrtplib;
+using namespace jthread;
 static int count = 0;
 
 #ifdef RTP_SUPPORT_THREAD
@@ -31,6 +32,7 @@ long getMicroseconds(){
 }
 
 
+JMutex mutex;
 using fecpp::byte;
 std::map<size_t, const byte*> mymap;
 
@@ -74,63 +76,15 @@ class save_to_map
       std::map<size_t, const byte*>& m;
    };
 
-class FakeFecPacket : public FecPacket::FecPacket {
+class GeneralDeleter : public Deleter {
 public:
-   FakeFecPacket(uint16_t fec_k, uint16_t block_no) : fec_k(fec_k), block_no(block_no) {
-      std::cout << "construct" << block_no << std::endl;
-      vec.push_back('X');
+   GeneralDeleter(RTPSession& sess): sess(sess) {}
+   void deletePacket(RTPPacket* pack) {
+      sess.DeletePacket(pack);
    }
-
-   ~FakeFecPacket() {
-      std::cout << "Destructor called for" << block_no << std::endl;
-   }
-
-   uint16_t get_fec_k() {
-      return fec_k;
-   }
-
-   uint16_t get_block_no() {
-      return block_no;
-   }
-
-   char* get_block() {
-      return vec.data();
-   }
-
 private:
-   uint16_t fec_k;
-   uint16_t block_no;
-   std::vector<char> vec;
+      RTPSession& sess;
 };
-
-void test_jitter_buffer() {
-   JitterBuffer jb;
-   assert(!jb.frame_ready(0));
-   FakeFecPacket packets[] = {
-      FakeFecPacket(4, 0),
-      FakeFecPacket(4, 1),
-      FakeFecPacket(4, 2),
-      FakeFecPacket(4, 3),
-      FakeFecPacket(4, 4),
-      FakeFecPacket(4, 5),
-   };
-
-   std::cout << "here" << std::endl;
-   assert(!jb.frame_ready(0));
-   jb.add_packet(0, packets[0]);
-   jb.add_packet(0, packets[1]);
-   jb.add_packet(0, packets[2]);
-   assert(!jb.frame_ready(0));
-   jb.add_packet(0, packets[3]);
-   jb.add_packet(0, packets[4]);
-   jb.add_packet(0, packets[5]);
-   assert(jb.frame_ready(0));
-
-   std::cout << "get frame" << std::endl;
-   auto frameMap = jb.getFrameMap(0);
-   assert(frameMap.size() == 6);
-   assert(frameMap[2][0] == 'X');
-}
 
 void benchmark_fec(size_t k, size_t n)
    {
@@ -175,9 +129,13 @@ void checkerror(int rtperr)
 
 class MyRTPSession : public RTPSession
 {
+public:
+     MyRTPSession(JitterBuffer& jb) : jb(jb) { }
 protected:
 	void OnPollThreadStep();
-	void ProcessRTPPacket(const RTPSourceData &srcdat,const RTPPacket &rtppack);
+	void ProcessRTPPacket(const RTPSourceData &srcdat,RTPPacket &rtppack);
+private:
+	JitterBuffer& jb;
 };
 
 void MyRTPSession::OnPollThreadStep()
@@ -197,7 +155,7 @@ void MyRTPSession::OnPollThreadStep()
 			while ((pack = GetNextPacket()) != NULL)
 			{
 				ProcessRTPPacket(*srcdat,*pack);
-				DeletePacket(pack);
+				//DeletePacket(pack);
 			}
 		} while (GotoNextSourceWithData());
 	}
@@ -207,16 +165,13 @@ void MyRTPSession::OnPollThreadStep()
 
 long now = getMicroseconds();
 long max_time_passed = 0;
-void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,const RTPPacket &rtppack)
+void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,RTPPacket &rtppack)
 {
-   int share_len = 1300;
    PacketPayload* payload = (PacketPayload*) rtppack.GetPayloadData();
-
-   byte* share_copy = new byte[share_len]; // TOOD memory leak
-   memcpy(share_copy, payload->data, share_len);
-
-   mymap[payload->fec_block_no] = share_copy;
-   printf("Done adding the packet to the map. Block #%d, size is %zu\n", payload->fec_block_no, mymap.size());
+   //printf("Adding packet of frame_no %d %d\n", payload->frame_no, payload->fec_block_no);
+   mutex.Lock();
+   jb.add_packet(payload->frame_no, rtppack);
+   mutex.Unlock();
 }
 
 //
@@ -224,15 +179,16 @@ void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,const RTPPacket 
 // 
 int main(void)
 {
-        test_jitter_buffer();
-	//benchmark_fec(200, 255);
+	 mutex.Init();
 	printf("most current ex4\n");
 #ifdef RTP_SOCKETTYPE_WINSOCK
 	WSADATA dat;
 	WSAStartup(MAKEWORD(2,2),&dat);
 #endif // RTP_SOCKETTYPE_WINSOCK
 	
-	MyRTPSession sess;
+	JitterBuffer jb;
+	MyRTPSession sess(jb);
+	GeneralDeleter deleter(sess);
 	uint16_t portbase = 9000;
 	std::string ipstr;
 	int status;
@@ -268,15 +224,26 @@ int main(void)
 	status = sess.SendPacket((void *)buff,50,0,false,10);
 	checkerror(status);
 	
+	uint8_t frame_no = 0;
 	while (true) {
-	   if (mymap.size() >= 200) {
-	      printf("received everything\n");
-	      break;
+	   mutex.Lock();
+	   if (jb.frame_ready(frame_no)) {
+	      printf("Got a frame %d and fec_k %d\n", frame_no, jb.get_fec_k(frame_no));
+	      auto frame_map = jb.getFrameMap(frame_no);
+	      output_checker check_output;
+	      fecpp::fec_code fec(jb.get_fec_k(frame_no), 255); // TODO the N should also come in the packets...
+	      std::cout << "Now decode " << std::endl;
+	      mutex.Unlock();
+	      fec.decode(frame_map, 1300, check_output);
+	      mutex.Lock();
+	      std::cout << "Done decoding" << std::endl;
+
+	      jb.clear_frame(deleter, frame_no);
+	      frame_no += 1;
+	      mutex.Unlock();
 	   }
+	   mutex.Unlock();
 	}
-	output_checker check_output;
-	fecpp::fec_code fec(200, 255);
-	fec.decode(mymap, 1300, check_output);
 	//Wait a number of seconds
 	RTPTime::Wait(RTPTime(10000,0));
 	
