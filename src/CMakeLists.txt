@@ -102,6 +102,7 @@ set(SOURCES
 	rtpabortdescriptors.cpp
 	rtptcpaddress.cpp
 	rtptcptransmitter.cpp
+	jitterbuffer.cpp
 	)
 
 if (NOT JRTPLIB_WINSOCK)

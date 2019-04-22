@@ -33,8 +33,9 @@ using fecpp::byte;
 std::map<size_t, const byte*> mymap;
 
 struct PacketPayload {
-	uint32_t packet_no;
-	uint32_t fec_block_no;
+	uint32_t frame_no;
+	uint16_t fec_block_no;
+	uint16_t fec_k;
 	char data[1300];
 };
 
@@ -77,6 +78,38 @@ class save_to_map
       size_t& share_len;
       std::map<size_t, const byte*>& m;
    };
+
+class MyDeleter {
+   void DeletePacket(RTPPacket *p) {
+      delete p;
+   }
+};
+
+uint8_t generate_packet(uint32_t frame_no, uint16_t fec_block_no, uint16_t fec_k) {
+   RTPPacket ret = new RTPPacket;
+   PacketPayload* payload = (PacketPayload*) rtppack.GetPayloadData();
+   payload->frame_no = frame_no;
+   payload->fec_block_no = fec_block_no;
+   payload->fec_k = fec_k;
+   (payload->data)[0] = fec_block_no;
+   return 0;
+}
+
+void test_jitter_buffer() {
+   MyDeleter d;
+   JitterBuffer jb(d);
+   //assert(jb.frame_ready(0));
+   jb.add_packet(generate_packet(0, 0, 4));
+   //assert(jb.frame_ready(0));
+   jb.add_packet(generate_packet(0, 1, 4));
+   jb.add_packet(generate_packet(0, 2, 4));
+   jb.add_packet(generate_packet(0, 3, 4));
+   jb.add_packet(generate_packet(0, 4, 4));
+   //assert(jb.frame_ready(0));
+   auto frameMap = jb.getFrameMap(0);
+   //assert(frameMap.size() == 5);
+   //assert((frameMap[2]->data)[0] == 2);
+}
 
 void benchmark_fec(size_t k, size_t n)
    {
