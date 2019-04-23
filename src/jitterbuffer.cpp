@@ -15,7 +15,6 @@ public:
 	}
 
 	~SingleFrame() {
-		cout << "destruct singleframe" << endl;
 	}
 
 	void clear(Deleter& d) {
@@ -67,7 +66,6 @@ void JitterBuffer::clear_frame(Deleter& d, uint8_t frame_no) {
 	for (uint8_t j = 0; j < 20; j++) {
 		uint8_t current_frame_no = frame_no - j;
 		if (m.count(current_frame_no) > 0) {
-			printf("delete frame %d\n", current_frame_no);
 			m[current_frame_no]->clear(d);
 			delete m[current_frame_no];
 			m.erase(current_frame_no);
@@ -77,7 +75,6 @@ void JitterBuffer::clear_frame(Deleter& d, uint8_t frame_no) {
 
 void JitterBuffer::add_packet(uint8_t frame_no, RTPPacket& packet) {
 	if (m.count(frame_no) == 0) {
-		printf("Add frame for %d\n", frame_no);
 		m[frame_no] = new SingleFrame();
 	}
 	m[frame_no]->add_packet(packet);

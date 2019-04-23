@@ -125,14 +125,12 @@ void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,RTPPacket &rtppa
   ////printf("m\n");
   int next_frame_no = jb.next_frame_ready();
   if (next_frame_no != -1) {
-     std::cout << "Size: " << jb.total_size() << std::endl;
-     printf("Got a frame %d and fec_k %d\n", next_frame_no, jb.get_fec_k(next_frame_no));
+     printf("Got a frame %d\n", next_frame_no);
+     //printf("Got a frame %d and fec_k %d\n", next_frame_no, jb.get_fec_k(next_frame_no));
      auto frame_map = jb.getFrameMap(next_frame_no);
      output_checker check_output;
-     fecpp::fec_code fec(jb.get_fec_k(next_frame_no), 255); // TODO the N should also come in the packets...
-     std::cout << "Now decode " << std::endl;
+     fecpp::fec_code fec(jb.get_fec_k(next_frame_no), 110); // TODO the N should also come in the packets...
      fec.decode(frame_map, 1300, check_output);
-     std::cout << "Done decoding" << std::endl;
 
      jb.clear_frame(deleter, next_frame_no);
   }
