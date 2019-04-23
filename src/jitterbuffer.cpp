@@ -15,10 +15,12 @@ public:
 	}
 
 	~SingleFrame() {
+		cout << "destruct singleframe" << endl;
 	}
 
 	void clear(Deleter& d) {
 		for (auto& pair: m) {
+			//printf("d %d\n", pair.first);
 			d.deletePacket(pair.second);
 		}
 	}
@@ -36,6 +38,10 @@ public:
 
 	uint16_t get_fec_k() {
 		return fec_k;
+	}
+
+	uint32_t size() {
+		return m.size();
 	}
 
 	std::map<size_t, const byte*> getFrameMap() {
@@ -58,6 +64,7 @@ JitterBuffer::JitterBuffer() { }
 
 void JitterBuffer::clear_frame(Deleter& d, uint16_t frame_no) {
 	if (m.count(frame_no) > 0) {
+		printf("delete frame %d\n", frame_no);
 		m[frame_no]->clear(d);
 		delete m[frame_no];
 		m.erase(frame_no);
@@ -81,6 +88,14 @@ uint16_t JitterBuffer::get_fec_k(uint16_t frame_no) {
 	}
 	return m[frame_no]->get_fec_k();
 
+}
+
+uint32_t JitterBuffer::total_size() {
+	uint32_t size = 0;
+	for (auto& pair : m) {
+		size += pair.second->size();
+	}
+	return size;
 }
 
 std::map<size_t, const byte*> JitterBuffer::getFrameMap(uint16_t frame_no) {

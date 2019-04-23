@@ -922,6 +922,7 @@ int RTPUDPv4Transmitter::SendRTPData(const void *data,size_t len)
 	destinations.GotoFirstElement();
 	while (destinations.HasCurrentElement())
 	{
+		printf("call actual send\n");
 		sendto(rtpsock,(const char *)data,len,0,(const struct sockaddr *)destinations.GetCurrentElement().GetRTPSockAddr(),sizeof(struct sockaddr_in));
 		destinations.GotoNextElement();
 	}

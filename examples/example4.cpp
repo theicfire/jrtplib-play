@@ -32,7 +32,6 @@ long getMicroseconds(){
 }
 
 
-JMutex mutex;
 using fecpp::byte;
 std::map<size_t, const byte*> mymap;
 
@@ -54,28 +53,6 @@ class output_checker
          }
    };
 
-class save_to_map
-   {
-   public:
-      save_to_map(size_t& share_len_arg,
-                  std::map<size_t, const byte*>& m_arg) :
-         share_len(share_len_arg), m(m_arg) {}
-
-      void operator()(size_t block_no, size_t,
-                      const byte share[], size_t len)
-         {
-         share_len = len;
-
-         // Contents of share[] are only valid in this scope, must copy
-         byte* share_copy = new byte[share_len];
-         memcpy(share_copy, share, share_len);
-         m[block_no] = share_copy;
-         }
-   private:
-      size_t& share_len;
-      std::map<size_t, const byte*>& m;
-   };
-
 class GeneralDeleter : public Deleter {
 public:
    GeneralDeleter(RTPSession& sess): sess(sess) {}
@@ -85,30 +62,6 @@ public:
 private:
       RTPSession& sess;
 };
-
-void benchmark_fec(size_t k, size_t n)
-   {
-
-   fecpp::fec_code fec(k, n);
-
-   std::vector<byte> input(k * 1300);
-   for(size_t i = 0; i != input.size(); ++i)
-      input[i] = i;
-
-   std::map<size_t, const byte*> shares;
-   size_t share_len;
-
-   save_to_map saver(share_len, shares);
-
-   fec.encode(&input[0], input.size(), std::tr1::ref(saver));
-
-   while(shares.size() > k)
-      shares.erase(shares.begin());
-
-   output_checker check_output;
-   fec.decode(shares, share_len, check_output);
-   }
-
 
 //
 // This function checks if there was a RTP error. If so, it displays an error
@@ -122,10 +75,6 @@ void checkerror(int rtperr)
 		exit(-1);
 	}
 }
-
-//
-// The new class routine
-//
 
 class MyRTPSession : public RTPSession
 {
@@ -155,7 +104,6 @@ void MyRTPSession::OnPollThreadStep()
 			while ((pack = GetNextPacket()) != NULL)
 			{
 				ProcessRTPPacket(*srcdat,*pack);
-				//DeletePacket(pack);
 			}
 		} while (GotoNextSourceWithData());
 	}
@@ -163,15 +111,32 @@ void MyRTPSession::OnPollThreadStep()
 	EndDataAccess();
 }
 
+JitterBuffer jb;
+MyRTPSession sess(jb);
+GeneralDeleter deleter(sess);
+uint8_t frame_no = 0;
 long now = getMicroseconds();
 long max_time_passed = 0;
 void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,RTPPacket &rtppack)
 {
    PacketPayload* payload = (PacketPayload*) rtppack.GetPayloadData();
    //printf("Adding packet of frame_no %d %d\n", payload->frame_no, payload->fec_block_no);
-   mutex.Lock();
    jb.add_packet(payload->frame_no, rtppack);
-   mutex.Unlock();
+
+  ////printf("m\n");
+  if (jb.frame_ready(frame_no)) {
+     std::cout << "Size: " << jb.total_size() << std::endl;
+     printf("Got a frame %d and fec_k %d\n", frame_no, jb.get_fec_k(frame_no));
+     auto frame_map = jb.getFrameMap(frame_no);
+     output_checker check_output;
+     fecpp::fec_code fec(jb.get_fec_k(frame_no), 255); // TODO the N should also come in the packets...
+     std::cout << "Now decode " << std::endl;
+     fec.decode(frame_map, 1300, check_output);
+     std::cout << "Done decoding" << std::endl;
+
+     jb.clear_frame(deleter, frame_no);
+     frame_no += 1;
+  }
 }
 
 //
@@ -179,16 +144,12 @@ void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,RTPPacket &rtppa
 // 
 int main(void)
 {
-	 mutex.Init();
 	printf("most current ex4\n");
 #ifdef RTP_SOCKETTYPE_WINSOCK
 	WSADATA dat;
 	WSAStartup(MAKEWORD(2,2),&dat);
 #endif // RTP_SOCKETTYPE_WINSOCK
 	
-	JitterBuffer jb;
-	MyRTPSession sess(jb);
-	GeneralDeleter deleter(sess);
 	uint16_t portbase = 9000;
 	std::string ipstr;
 	int status;
@@ -223,28 +184,8 @@ int main(void)
 	checkerror(status);
 	status = sess.SendPacket((void *)buff,50,0,false,10);
 	checkerror(status);
-	
-	uint8_t frame_no = 0;
-	while (true) {
-	   mutex.Lock();
-	   if (jb.frame_ready(frame_no)) {
-	      printf("Got a frame %d and fec_k %d\n", frame_no, jb.get_fec_k(frame_no));
-	      auto frame_map = jb.getFrameMap(frame_no);
-	      output_checker check_output;
-	      fecpp::fec_code fec(jb.get_fec_k(frame_no), 255); // TODO the N should also come in the packets...
-	      std::cout << "Now decode " << std::endl;
-	      mutex.Unlock();
-	      fec.decode(frame_map, 1300, check_output);
-	      mutex.Lock();
-	      std::cout << "Done decoding" << std::endl;
+	printf("Done sending\n");
 
-	      jb.clear_frame(deleter, frame_no);
-	      frame_no += 1;
-	      mutex.Unlock();
-	   }
-	   mutex.Unlock();
-	}
-	//Wait a number of seconds
 	RTPTime::Wait(RTPTime(10000,0));
 	
 	sess.BYEDestroy(RTPTime(10,0),0,0);
