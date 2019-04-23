@@ -114,7 +114,6 @@ void MyRTPSession::OnPollThreadStep()
 JitterBuffer jb;
 MyRTPSession sess(jb);
 GeneralDeleter deleter(sess);
-uint8_t frame_no = 0;
 long now = getMicroseconds();
 long max_time_passed = 0;
 void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,RTPPacket &rtppack)
@@ -124,18 +123,18 @@ void MyRTPSession::ProcessRTPPacket(const RTPSourceData &srcdat,RTPPacket &rtppa
    jb.add_packet(payload->frame_no, rtppack);
 
   ////printf("m\n");
-  if (jb.frame_ready(frame_no)) {
+  int next_frame_no = jb.next_frame_ready();
+  if (next_frame_no != -1) {
      std::cout << "Size: " << jb.total_size() << std::endl;
-     printf("Got a frame %d and fec_k %d\n", frame_no, jb.get_fec_k(frame_no));
-     auto frame_map = jb.getFrameMap(frame_no);
+     printf("Got a frame %d and fec_k %d\n", next_frame_no, jb.get_fec_k(next_frame_no));
+     auto frame_map = jb.getFrameMap(next_frame_no);
      output_checker check_output;
-     fecpp::fec_code fec(jb.get_fec_k(frame_no), 255); // TODO the N should also come in the packets...
+     fecpp::fec_code fec(jb.get_fec_k(next_frame_no), 255); // TODO the N should also come in the packets...
      std::cout << "Now decode " << std::endl;
      fec.decode(frame_map, 1300, check_output);
      std::cout << "Done decoding" << std::endl;
 
-     jb.clear_frame(deleter, frame_no);
-     frame_no += 1;
+     jb.clear_frame(deleter, next_frame_no);
   }
 }
 

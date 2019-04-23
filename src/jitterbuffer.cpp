@@ -62,27 +62,55 @@ private:
 
 JitterBuffer::JitterBuffer() { }
 
-void JitterBuffer::clear_frame(Deleter& d, uint16_t frame_no) {
-	if (m.count(frame_no) > 0) {
-		printf("delete frame %d\n", frame_no);
-		m[frame_no]->clear(d);
-		delete m[frame_no];
-		m.erase(frame_no);
+void JitterBuffer::clear_frame(Deleter& d, uint8_t frame_no) {
+	// Delete the past 20 frames, in case they weren't full
+	for (uint8_t j = 0; j < 20; j++) {
+		uint8_t current_frame_no = frame_no - j;
+		if (m.count(current_frame_no) > 0) {
+			printf("delete frame %d\n", frame_no);
+			m[current_frame_no]->clear(d);
+			delete m[current_frame_no];
+			m.erase(current_frame_no);
+		}
 	}
 }
 
-void JitterBuffer::add_packet(uint16_t frame_no, RTPPacket& packet) {
+void JitterBuffer::add_packet(uint8_t frame_no, RTPPacket& packet) {
 	if (m.count(frame_no) == 0) {
 		m[frame_no] = new SingleFrame();
 	}
 	m[frame_no]->add_packet(packet);
 }
 
-bool JitterBuffer::frame_ready(uint16_t frame_no) {
-	return m.count(frame_no) > 0 ? m[frame_no]->frame_ready() : false;
+int JitterBuffer::next_frame_ready() {
+	bool found = false;
+	uint8_t max_frame_ready = 0;
+	uint8_t min_frame_ready = 0xFF;
+
+	for (auto& pair : m) {
+		if (pair.second->frame_ready()) {
+			found = true;
+			if (pair.first < min_frame_ready) {
+				min_frame_ready = pair.first;
+			}
+			if (pair.first > max_frame_ready) {
+				max_frame_ready = pair.first;
+			}
+		}
+	}
+	if (!found) {
+		return -1;
+	}
+
+	// Out of the range of ready frames, return the earliest one, assuming frame numbers increase over time.
+	bool frames_wrapped = max_frame_ready - min_frame_ready > 128;
+	if (frames_wrapped) {
+		return max_frame_ready;
+	}
+	return min_frame_ready;
 }
 
-uint16_t JitterBuffer::get_fec_k(uint16_t frame_no) {
+uint16_t JitterBuffer::get_fec_k(uint8_t frame_no) {
 	if (!m[frame_no]->frame_ready()) {
 		throw "Frame not ready";
 	}
@@ -98,7 +126,7 @@ uint32_t JitterBuffer::total_size() {
 	return size;
 }
 
-std::map<size_t, const byte*> JitterBuffer::getFrameMap(uint16_t frame_no) {
+std::map<size_t, const byte*> JitterBuffer::getFrameMap(uint8_t frame_no) {
 	if (!m[frame_no]->frame_ready()) {
 		throw "Frame not ready";
 	}
