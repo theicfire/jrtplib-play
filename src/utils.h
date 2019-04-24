@@ -42,3 +42,10 @@ public:
 private:
     std::chrono::high_resolution_clock::time_point time;
 };
+
+struct PacketPayload {
+	uint32_t frame_no;
+	uint16_t fec_block_no;
+	uint16_t fec_k;
+	char data[1300];
+};

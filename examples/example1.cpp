@@ -37,12 +37,6 @@ void checkerror(int rtperr)
 }
 
 
-struct PacketPayload {
-	uint32_t packet_no;
-	uint32_t fec_block_no;
-	char data[1300];
-};
-
 class output_checker
 {
 public:
@@ -63,7 +57,7 @@ public:
 class save_to_map
 {
 public:
-	save_to_map(RTPSession& yay) : sess(yay) { }
+	save_to_map(uint8_t frame_no, uint8_t fec_k, RTPSession& yay) : frame_no(frame_no), fec_k(fec_k), sess(yay) { }
 
 	void operator()(size_t block_no, size_t,
 		const byte share[], size_t len)
@@ -72,23 +66,29 @@ public:
 		PacketPayload payload;
 		payload.fec_block_no = block_no;
 		memcpy(payload.data, share, len); // TODO may be slow...
-		payload.packet_no = 1;
+		payload.frame_no = frame_no;
+		payload.fec_k = fec_k;
 		// TODO this void* &payload is a bit sketch.. is the array memory correct?
 		//printf("Sending packet that is %zu long\n", sizeof(PacketPayload));
-		printf("sending fec block %d\n", payload.fec_block_no);
+		//printf("sending fec block %d\n", payload.fec_block_no);
+		while (t.getElapsedMicroseconds() < 400) {
+			// TODO sleep
+		}
+		t.reset();
 		status = sess.SendPacket((void*)& payload, sizeof(PacketPayload), 0, false, 10);
 		checkerror(status);
 	}
 private:
 	RTPSession& sess;
+	uint8_t frame_no;
+	uint8_t fec_k;
 };
 
 
-void send_sample(std::vector<uint8_t>& input, size_t k, size_t n, RTPSession& sess)
+void send_sample(std::vector<uint8_t>& input, uint8_t frame_no, size_t k, size_t n, RTPSession& sess)
 {
-
 	fecpp::fec_code fec(k, n);
-	save_to_map saver(sess);
+	save_to_map saver(frame_no, k, sess);
 
 	fec.encode(&input[0], input.size(), std::tr1::ref(saver));
 }
@@ -176,34 +176,20 @@ int main(void)
 		sess.EndDataAccess();
 	}
 
-	printf("Now sending\n");
-	size_t k = 200;
-	size_t n = 255;
-	std::vector<byte> input(k * 1300);
-	for (size_t i = 0; i != input.size(); ++i) {
-		input[i] = i;
-	}
-	send_sample(input, k, n, sess);
-	unsigned long long start = getMicroseconds();
-
-	RTPTime::Wait(RTPTime(100, 0));
-	// long max_time_passed = 0;
-	printf("cool Send 100 packets\n");
-	for (int j = 0; j < 1000000; j++) {
-		PacketPayload payload;
-		payload.packet_no = j;
-		sprintf(payload.data, "Thing: %d", j);
-		status = sess.SendPacket((void*)payload.data, sizeof(PacketPayload), 0, false, 10);
-		checkerror(status);
-		long diff = (getMicroseconds() - start);
-
-		while ((getMicroseconds() - start) < j * 142) {
-			//printf("w");
-			//usleep(1000);
+	uint8_t frame_no = 0;
+	size_t k = 100;
+	size_t n = 110;
+	while (true) {
+		printf("Now sending %d\n", frame_no);
+		std::vector<byte> input(k * 1300);
+		for (size_t i = 0; i != input.size(); ++i) {
+			input[i] = i;
 		}
+		send_sample(input, frame_no, k, n, sess);
+		frame_no += 1;
+		printf("Waiting 1 second\n");
+		//RTPTime::Wait(RTPTime(0, 30000));
 	}
-
-
 
 	sess.BYEDestroy(RTPTime(10, 0), 0, 0);
 
